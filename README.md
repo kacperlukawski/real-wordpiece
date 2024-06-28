@@ -111,7 +111,7 @@ vocab = {"r", "e", "a", "p", "##r", "##e", "##a", "##p"}
 WordPieces also uses a different heuristic to select the pair of tokens to merge. Instead of merging the most frequent
 pair, WordPiece merges the pair that maximizes the score function that is defined as:
 
-$$ score(u, v) = \frac{frequency(u, v}{frequency(u) \dot frequency(v)} $$
+$$ score(u, v) = \frac{frequency(u, v)}{frequency(u) \dot frequency(v)} $$
 
 Where $u$ and $v$ are tokens, $frequency(u, v)$ is the frequency of the pair in the corpus, and $frequency(u)$ and
 $frequency(v)$ are the frequencies of the tokens $u$ and $v$ alone. BPE merges are a bit more intuitive, and both
