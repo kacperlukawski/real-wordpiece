@@ -16,6 +16,7 @@ tokenizers = "^0.19.1"
 pytest = "^8.2.2"
 ruff = "^0.4.10"
 pre-commit = "^3.7.1"
+datasets = "^2.20.0"
 
 [tool.pytest.ini_options]
 minversion = "7.1"
