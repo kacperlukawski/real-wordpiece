@@ -257,7 +257,8 @@ class RealWordPieceTrainer:
 
     def calculate_scores(self, tokenization: Tokenization) -> Dict[TokenPair, float]:
         """
-        Calculate the scores for all possible pairs of tokens in the tokenization.
+        Calculate the scores for all possible pairs of tokens in the tokenization. It only includes the pairs that
+        has a frequency higher than the minimum frequency.
         :param tokenization:
         :return:
         """
@@ -268,6 +269,12 @@ class RealWordPieceTrainer:
         pair_frequency = tokenization.to_pair_frequency()
 
         for token_pair in tokenization.iter_token_pairs():
+            if pair_frequency[token_pair] < self.min_frequency:
+                logger.debug(
+                    f"Skipping pair {token_pair} with frequency {pair_frequency[token_pair]}"
+                )
+                continue
+
             left, right = token_pair
             score = pair_frequency[token_pair] / (
                 symbol_frequency[left] * symbol_frequency[right]
