@@ -1,10 +1,10 @@
 from pathlib import Path
 
 from datasets import load_dataset
-from tokenizers import Tokenizer
 from tokenizers.models import WordPiece
-from tokenizers.normalizers import Lowercase
-from tokenizers.pre_tokenizers import Whitespace
+from tokenizers.normalizers import BertNormalizer
+from tokenizers.pre_tokenizers import BertPreTokenizer
+from tokenizers.tokenizers import Tokenizer
 from tokenizers.trainers import WordPieceTrainer
 
 from real_wordpiece.trainer import RealWordPieceTrainer
@@ -16,8 +16,8 @@ training_data = dataset["query"] + dataset["answer"]
 
 # 🤗 tokenizers implementation of the WordPiece algorithm
 hf_tokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
-hf_tokenizer.normalizer = Lowercase()
-hf_tokenizer.pre_tokenizer = Whitespace()
+hf_tokenizer.normalizer = BertNormalizer()
+hf_tokenizer.pre_tokenizer = BertPreTokenizer()
 hf_trainer = WordPieceTrainer(vocab_size=30000, special_tokens=["[UNK]"])
 hf_tokenizer.train_from_iterator(training_data, hf_trainer)
 hf_tokenizer.save(str(CURRENT_DIR / "tokenizers" / "hf_wordpiece.json"), pretty=True)
@@ -25,8 +25,8 @@ print("Finished training HF WordPiece")
 
 # real-wordpiece implementation of the WordPiece algorithm
 real_tokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
-real_tokenizer.normalizer = Lowercase()
-real_tokenizer.pre_tokenizer = Whitespace()
+real_tokenizer.normalizer = BertNormalizer()
+real_tokenizer.pre_tokenizer = BertPreTokenizer()
 real_trainer = RealWordPieceTrainer(
     vocab_size=30000, special_tokens=["[UNK]"], min_frequency=10
 )

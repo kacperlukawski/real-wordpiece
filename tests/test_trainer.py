@@ -27,10 +27,10 @@ def test_train_from_iterator_updates_wordpiece(training_data: List[str]):
     tokenizer = Tokenizer(WordPiece())
     tokenizer.pre_tokenizer = Whitespace()
 
-    trainer = RealWordPieceTrainer(vocab_size=27)
+    trainer = RealWordPieceTrainer(vocab_size=29)
     trainer.train_tokenizer(training_data, tokenizer)
 
-    assert len(tokenizer.get_vocab()) == 27
+    assert len(tokenizer.get_vocab()) == 29
     assert tokenizer.encode("walker").tokens == ["walk", "##er"]
 
 

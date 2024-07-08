@@ -22,41 +22,64 @@ class Word:
     def add_token(self, token: str):
         self.tokens.append(token)
 
+    def iter_tokens(self) -> Generator[str, None, None]:
+        for token in self.tokens:
+            yield token
 
-@dataclass
+    def iter_token_pairs(
+        self, unique_only: bool = False
+    ) -> Generator[TokenPair, None, None]:
+        seen_pairs = set()
+        for i in range(len(self.tokens) - 1):
+            pair = (self.tokens[i], self.tokens[i + 1])
+            if unique_only and pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            yield pair
+
+
 class Tokenization:
-    words: List[Word] = field(default_factory=list)
+    """
+    Tokenization is a set of words that the set of texts was tokenized into. It keeps track of the frequency of each
+    word and the tokens that compose it.
+    """
+
+    def __init__(self):
+        self.words: List[Word] = []
+        self.token_frequency: Dict[str, int] = Counter()
+        self.pair_frequency: Dict[TokenPair, int] = Counter()
+        self.scores: Dict[TokenPair, float] = OrderedDict()
 
     def add_word(self, word: Word):
         self.words.append(word)
+        self.update_frequencies(word)
 
-    def iter_token_pairs(self) -> Generator[TokenPair, None, None]:
+    def update_frequencies(self, word: Word):
+        for token in word.iter_tokens():
+            self.token_frequency[token] += word.count
+        for pair in word.iter_token_pairs(unique_only=False):
+            self.pair_frequency[pair] += word.count
+        for pair in word.iter_token_pairs():
+            self.scores[pair] = self.pair_frequency[pair] / (
+                self.token_frequency[pair[0]] * self.token_frequency[pair[1]]
+            )
+
+    def iter_token_pairs(
+        self, unique_only: bool = False
+    ) -> Generator[TokenPair, None, None]:
         seen_pairs = set()
         for word in self.words:
-            for i in range(len(word.tokens) - 1):
-                left_token = word.tokens[i]
-                right_token = word.tokens[i + 1]
-                pair = (left_token, right_token)
-                if pair not in seen_pairs:
-                    seen_pairs.add(pair)
-                    yield left_token, right_token
+            for pair in word.iter_token_pairs():
+                if unique_only and pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                yield pair
 
-    def to_symbol_frequency(self) -> Dict[str, int]:
-        symbol_counter = Counter()
-        for word in self.words:
-            for token in word.tokens:
-                symbol_counter[token] += word.count
-        return symbol_counter
+    def get_symbol_frequency(self, symbol: str) -> int:
+        return self.token_frequency[symbol]
 
-    def to_pair_frequency(self) -> Dict[TokenPair, int]:
-        pair_counter = Counter()
-        for word in self.words:
-            for i in range(len(word.tokens) - 1):
-                left_token = word.tokens[i]
-                right_token = word.tokens[i + 1]
-                pair = (left_token, right_token)
-                pair_counter[pair] += word.count
-        return pair_counter
+    def get_pair_frequency(self, pair: TokenPair) -> int:
+        return self.pair_frequency[pair]
 
     def merge_pair(self, pair: TokenPair, new_token: str):
         """
@@ -65,14 +88,53 @@ class Tokenization:
         :param new_token:
         :return:
         """
+        recompute_score_pairs, remove_frequency_pairs = set(), {pair}
         for word in self.words:
             # Iterate from the end to the beginning to avoid index issues
             for index in range(len(word.tokens) - 2, -1, -1):
                 current_pair = (word.tokens[index], word.tokens[index + 1])
                 if current_pair == pair:
+                    # Update the symbol frequency
+                    self.token_frequency[new_token] += word.count
+
+                    # Reduce the token frequency for the old symbols
+                    self.token_frequency[word.tokens[index]] -= word.count
+                    self.token_frequency[word.tokens[index + 1]] -= word.count
+
+                    # Check the neighbors and update pair frequencies accordingly
+                    if index - 1 >= 0:
+                        left_pair = (word.tokens[index - 1], new_token)
+                        self.pair_frequency[left_pair] += word.count
+                        recompute_score_pairs.add(left_pair)
+                        remove_frequency_pairs.add(
+                            tuple(word.tokens[index - 1 : index + 1])
+                        )
+                    if index + 2 < len(word.tokens) - 1:
+                        right_pair = (new_token, word.tokens[index + 2])
+                        self.pair_frequency[right_pair] += word.count
+                        recompute_score_pairs.add(right_pair)
+                        remove_frequency_pairs.add(
+                            tuple(word.tokens[index + 1 : index + 3])
+                        )
+
                     # Replace the pair with the new token
                     word.tokens[index] = new_token
                     del word.tokens[index + 1]
+
+        # Recalculate the scores for the newly created pairs
+        for affected_pair in recompute_score_pairs:
+            self.scores[affected_pair] = self.pair_frequency[affected_pair] / (
+                self.token_frequency[affected_pair[0]]
+                * self.token_frequency[affected_pair[1]]
+            )
+
+        # Remove the old pairs from the scores
+        for affected_pair in remove_frequency_pairs:
+            self.scores.pop(affected_pair, 0)  # noqa
+
+        # Remove the old pairs from the frequencies
+        for affected_pair in remove_frequency_pairs:
+            self.pair_frequency.pop(affected_pair, 0)  # noqa
 
 
 class RealWordPieceTrainer:
@@ -161,14 +223,20 @@ class RealWordPieceTrainer:
         tokenization = self.init_tokenize_words(word_counts, vocabulary)
 
         while len(vocabulary) < self.vocab_size:
-            # Calculate the scores for all possible pairs of tokens
-            scores = self.calculate_scores(tokenization)
-            if len(scores) == 0:
+            # Filter only the scores that are above the minimum frequency
+            filtered_scores = {
+                pair: score
+                for pair, score in tokenization.scores.items()
+                if tokenization.get_pair_frequency(pair) >= self.min_frequency
+            }
+
+            # Break the process if there are no more pairs to merge
+            if len(filtered_scores) == 0:
                 logger.debug("No more pairs to merge")
                 break
 
             # Find the pair with the maximum score, merge it and update the vocabulary
-            max_pair, max_score = max(scores.items(), key=lambda x: x[1])
+            max_pair, max_score = max(filtered_scores.items(), key=lambda x: x[1])
             new_token = max_pair[0] + max_pair[1].lstrip(self.continuing_subword_prefix)
             tokenization.merge_pair(max_pair, new_token)
             vocabulary[new_token] = len(vocabulary)
@@ -254,31 +322,3 @@ class RealWordPieceTrainer:
             tokenization.add_word(tokenized_word)
 
         return tokenization
-
-    def calculate_scores(self, tokenization: Tokenization) -> Dict[TokenPair, float]:
-        """
-        Calculate the scores for all possible pairs of tokens in the tokenization. It only includes the pairs that
-        has a frequency higher than the minimum frequency.
-        :param tokenization:
-        :return:
-        """
-        scores: Dict[TokenPair, float] = OrderedDict()
-
-        # Calculate the frequency of each symbol and pair
-        symbol_frequency = tokenization.to_symbol_frequency()
-        pair_frequency = tokenization.to_pair_frequency()
-
-        for token_pair in tokenization.iter_token_pairs():
-            if pair_frequency[token_pair] < self.min_frequency:
-                logger.debug(
-                    f"Skipping pair {token_pair} with frequency {pair_frequency[token_pair]}"
-                )
-                continue
-
-            left, right = token_pair
-            score = pair_frequency[token_pair] / (
-                symbol_frequency[left] * symbol_frequency[right]
-            )
-            scores[token_pair] = score
-
-        return scores
