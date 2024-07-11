@@ -1,44 +1,64 @@
+import logging
 from pathlib import Path
 
 from datasets import load_dataset
 from tokenizers.models import WordPiece
-from tokenizers.normalizers import BertNormalizer
-from tokenizers.pre_tokenizers import BertPreTokenizer
+from tokenizers.normalizers import NFKD, Lowercase, Sequence, Strip, StripAccents
+from tokenizers.pre_tokenizers import Punctuation
+from tokenizers.pre_tokenizers import Sequence as PreTokenizationSequence
+from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.tokenizers import Tokenizer
 from tokenizers.trainers import WordPieceTrainer
 
 from real_wordpiece.trainer import RealWordPieceTrainer
 
 CURRENT_DIR = Path(__file__).parent
+VOCAB_SIZE = 30000
+MIN_FREQUENCY = 5
 
-dataset = load_dataset("sentence-transformers/natural-questions", split="train")
-training_data = dataset["query"] + dataset["answer"]
+dataset = load_dataset("TopicNavi/Wikipedia-example-data", split="train")
+training_data = dataset["text"]
+
+# Enable logging to console (level INFO)
+logging.basicConfig(level=logging.INFO)
+
+# Configure pre-tokenization and normalization
+normalizer = Sequence([NFKD(), Lowercase(), StripAccents(), Strip()])
+pre_tokenizer = PreTokenizationSequence([Whitespace(), Punctuation()])
 
 # 🤗 tokenizers implementation of the WordPiece algorithm
 hf_tokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
-hf_tokenizer.normalizer = BertNormalizer()
-hf_tokenizer.pre_tokenizer = BertPreTokenizer()
-hf_trainer = WordPieceTrainer(vocab_size=30000, special_tokens=["[UNK]"])
+hf_tokenizer.normalizer = normalizer
+hf_tokenizer.pre_tokenizer = pre_tokenizer
+hf_trainer = WordPieceTrainer(
+    vocab_size=VOCAB_SIZE,
+    special_tokens=["[UNK]"],
+    min_frequency=MIN_FREQUENCY,
+)
 hf_tokenizer.train_from_iterator(training_data, hf_trainer)
 hf_tokenizer.save(str(CURRENT_DIR / "tokenizers" / "hf_wordpiece.json"), pretty=True)
 print("Finished training HF WordPiece")
 
 # real-wordpiece implementation of the WordPiece algorithm
 real_tokenizer = Tokenizer(WordPiece(unk_token="[UNK]"))
-real_tokenizer.normalizer = BertNormalizer()
-real_tokenizer.pre_tokenizer = BertPreTokenizer()
+real_tokenizer.normalizer = normalizer
+real_tokenizer.pre_tokenizer = pre_tokenizer
 real_trainer = RealWordPieceTrainer(
-    vocab_size=30000, special_tokens=["[UNK]"], min_frequency=10
+    vocab_size=VOCAB_SIZE,
+    special_tokens=["[UNK]"],
+    min_frequency=MIN_FREQUENCY,
 )
 real_trainer.train_tokenizer(training_data, real_tokenizer)
-hf_tokenizer.save(str(CURRENT_DIR / "tokenizers" / "real_wordpiece.json"), pretty=True)
+real_tokenizer.save(
+    str(CURRENT_DIR / "tokenizers" / "real_wordpiece.json"), pretty=True
+)
 print("Finished training real WordPiece")
 
 # Compare the tokenization results
 hf_vocab = set(hf_tokenizer.get_vocab().keys())
 real_vocab = set(real_tokenizer.get_vocab().keys())
 
-# Display the differences in the vocabularies and their sizes
+# Display the differences in the vocabularies
 hf_but_not_real = hf_vocab - real_vocab
 real_but_not_hf = real_vocab - hf_vocab
 

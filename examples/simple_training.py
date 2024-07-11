@@ -26,4 +26,4 @@ trainer.train_tokenizer(training_data, tokenizer)
 print(tokenizer.encode("Hugging").tokens)
 # Out: ['huggi', '##n', '##g']
 print(tokenizer.encode("HOgging").tokens)
-# Out: ['h', '##o', '##gg', '##i', '##n', '##g']
+# Out: ['h', '##o', '##g', '##g', '##ing']
