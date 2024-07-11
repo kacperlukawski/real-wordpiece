@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from pathlib import Path
 
 from datasets import load_dataset
@@ -19,8 +20,26 @@ MIN_FREQUENCY = 5
 dataset = load_dataset("TopicNavi/Wikipedia-example-data", split="train")
 training_data = dataset["text"]
 
-# Enable logging to console (level INFO)
-logging.basicConfig(level=logging.INFO)
+# Enable logging to console (level INFO) and to a file at the same time (level DEBUG)
+# Filename for the log should contain the launch datetime of the script to allow multiple
+# run logs in the same directory.
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+
+file_handler = logging.FileHandler(
+    str(CURRENT_DIR / "logs" / f"{datetime.now()}-compare_to_hf_wordpiece.log"),
+    mode="w",
+)
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 # Configure pre-tokenization and normalization
 normalizer = Sequence([NFKD(), Lowercase(), StripAccents(), Strip()])

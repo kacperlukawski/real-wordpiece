@@ -221,6 +221,7 @@ class RealWordPieceTrainer:
         # Calculate the word counts
         word_counts = self.calculate_word_counts(tokenizer, normalized_training_data)
         logger.info(f"Found {len(word_counts)} unique words in the training data")
+        logger.debug(f"Word counts: {word_counts}")
 
         # Initialize the vocabulary with the special tokens
         vocabulary: Dict[str, int] = OrderedDict()
@@ -263,6 +264,9 @@ class RealWordPieceTrainer:
             logger.debug(f"Merged {max_pair} into {new_token} with score {max_score}")
 
             # Log progress every 100 iterations
+            logger.debug(
+                f"Vocabulary size: {len(vocabulary)}. Remaining pairs: {len(tokenization.pair_frequency)}"
+            )
             if len(vocabulary) % 100 == 0:
                 logger.info(
                     f"Current vocabulary size: {len(vocabulary)}. Last merged token pair: {max_pair}. "
