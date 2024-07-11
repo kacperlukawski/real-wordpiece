@@ -42,6 +42,7 @@ class Tokenization:
     """
     Tokenization is a set of words that the set of texts was tokenized into. It keeps track of the frequency of each
     word and the tokens that compose it.
+    TODO: tokenization could be reimplemented with a data structure that keeps the order of the pairs based on their score
     """
 
     def __init__(self):
@@ -88,38 +89,52 @@ class Tokenization:
         :param new_token:
         :return:
         """
-        recompute_score_pairs, remove_frequency_pairs = set(), {pair}
+        recompute_score_pairs, remove_pairs = set(), {pair}
         for word in self.words:
             # Iterate from the end to the beginning to avoid index issues
             for index in range(len(word.tokens) - 2, -1, -1):
                 current_pair = (word.tokens[index], word.tokens[index + 1])
-                if current_pair == pair:
-                    # Update the symbol frequency
-                    self.token_frequency[new_token] += word.count
+                if not current_pair == pair:
+                    continue
 
-                    # Reduce the token frequency for the old symbols
-                    self.token_frequency[word.tokens[index]] -= word.count
-                    self.token_frequency[word.tokens[index + 1]] -= word.count
+                # Update the symbol frequency
+                self.token_frequency[new_token] += word.count
 
-                    # Check the neighbors and update pair frequencies accordingly
-                    if index - 1 >= 0:
-                        left_pair = (word.tokens[index - 1], new_token)
-                        self.pair_frequency[left_pair] += word.count
-                        recompute_score_pairs.add(left_pair)
-                        remove_frequency_pairs.add(
-                            tuple(word.tokens[index - 1 : index + 1])
-                        )
-                    if index + 2 < len(word.tokens) - 1:
-                        right_pair = (new_token, word.tokens[index + 2])
-                        self.pair_frequency[right_pair] += word.count
-                        recompute_score_pairs.add(right_pair)
-                        remove_frequency_pairs.add(
-                            tuple(word.tokens[index + 1 : index + 3])
-                        )
+                # Reduce the token frequency for the old symbols
+                self.token_frequency[word.tokens[index]] -= word.count
+                self.token_frequency[word.tokens[index + 1]] -= word.count
 
-                    # Replace the pair with the new token
-                    word.tokens[index] = new_token
-                    del word.tokens[index + 1]
+                # Check the neighbors and update pair frequencies accordingly
+                if index - 1 >= 0:
+                    old_left_pair = (word.tokens[index - 1], word.tokens[index])
+                    new_left_pair = (word.tokens[index - 1], new_token)
+
+                    self.pair_frequency[new_left_pair] += word.count
+                    recompute_score_pairs.add(new_left_pair)
+
+                    self.pair_frequency[old_left_pair] -= word.count
+                    if self.pair_frequency[old_left_pair] == 0:
+                        remove_pairs.add(old_left_pair)
+                if index + 2 < len(word.tokens) - 1:
+                    old_right_pair = (word.tokens[index + 1], word.tokens[index + 2])
+                    new_right_pair = (new_token, word.tokens[index + 2])
+
+                    self.pair_frequency[new_right_pair] += word.count
+                    recompute_score_pairs.add(new_right_pair)
+
+                    self.pair_frequency[old_right_pair] -= word.count
+                    if self.pair_frequency[old_right_pair] == 0:
+                        remove_pairs.add(old_right_pair)
+
+                # Remove the tokens from frequencies if they are set to zero
+                if self.token_frequency[word.tokens[index]] == 0:
+                    del self.token_frequency[word.tokens[index]]
+                if self.token_frequency[word.tokens[index + 1]] == 0:
+                    del self.token_frequency[word.tokens[index + 1]]
+
+                # Replace the pair with the new token
+                word.tokens[index] = new_token
+                del word.tokens[index + 1]
 
         # Recalculate the scores for the newly created pairs
         for affected_pair in recompute_score_pairs:
@@ -128,12 +143,9 @@ class Tokenization:
                 * self.token_frequency[affected_pair[1]]
             )
 
-        # Remove the old pairs from the scores
-        for affected_pair in remove_frequency_pairs:
+        # Remove the stale pairs from the scores
+        for affected_pair in remove_pairs:
             self.scores.pop(affected_pair, 0)  # noqa
-
-        # Remove the old pairs from the frequencies
-        for affected_pair in remove_frequency_pairs:
             self.pair_frequency.pop(affected_pair, 0)  # noqa
 
 
@@ -200,14 +212,15 @@ class RealWordPieceTrainer:
         tokenizer.model.continuing_subword_prefix = self.continuing_subword_prefix
 
         # Normalize the training data
-        normalized_training_data = (
-            [tokenizer.normalizer.normalize_str(text) for text in training_data]
-            if tokenizer.normalizer
-            else training_data
-        )
+        normalized_training_data = training_data
+        if tokenizer.normalizer is not None:
+            normalized_training_data = [
+                tokenizer.normalizer.normalize_str(text) for text in training_data
+            ]
 
         # Calculate the word counts
-        word_counts = self.calculate_word_counts(normalized_training_data)
+        word_counts = self.calculate_word_counts(tokenizer, normalized_training_data)
+        logger.info(f"Found {len(word_counts)} unique words in the training data")
 
         # Initialize the vocabulary with the special tokens
         vocabulary: Dict[str, int] = OrderedDict()
@@ -216,11 +229,15 @@ class RealWordPieceTrainer:
 
         # Find the alphabet used in the normalized data
         alphabet = self.compute_alphabet(word_counts)
+        logger.info(f"Initial alphabet has {len(alphabet)} tokens")
         for char in alphabet:
             vocabulary[char] = len(vocabulary)
 
         # Tokenize the words initially
         tokenization = self.init_tokenize_words(word_counts, vocabulary)
+        logger.info(
+            f"Initialized the tokenization with {len(tokenization.pair_frequency)} token pairs"
+        )
 
         while len(vocabulary) < self.vocab_size:
             # Filter only the scores that are above the minimum frequency
@@ -232,15 +249,25 @@ class RealWordPieceTrainer:
 
             # Break the process if there are no more pairs to merge
             if len(filtered_scores) == 0:
-                logger.debug("No more pairs to merge")
+                logger.info("No more pairs frequent enough to merge")
                 break
 
             # Find the pair with the maximum score, merge it and update the vocabulary
             max_pair, max_score = max(filtered_scores.items(), key=lambda x: x[1])
-            new_token = max_pair[0] + max_pair[1].lstrip(self.continuing_subword_prefix)
+            second_token = max_pair[1]
+            if second_token.startswith(self.continuing_subword_prefix):
+                second_token = second_token[2:]
+            new_token = max_pair[0] + second_token
             tokenization.merge_pair(max_pair, new_token)
             vocabulary[new_token] = len(vocabulary)
             logger.debug(f"Merged {max_pair} into {new_token} with score {max_score}")
+
+            # Log progress every 100 iterations
+            if len(vocabulary) % 100 == 0:
+                logger.info(
+                    f"Current vocabulary size: {len(vocabulary)}. Last merged token pair: {max_pair}. "
+                    f"Remaining pairs: {len(tokenization.pair_frequency)}."
+                )
 
         # Store the vocabulary in a temporary file and then load WordPiece model from it
         with tempfile.NamedTemporaryFile("w") as fp:
@@ -253,15 +280,23 @@ class RealWordPieceTrainer:
             # Reset the tokenizer model to the new one
             tokenizer.model = model
 
-    def calculate_word_counts(self, texts: List[str]) -> Dict[str, int]:
+    def calculate_word_counts(
+        self, tokenizer: Tokenizer, texts: List[str]
+    ) -> Dict[str, int]:
         """
         Count the number of times each word appears in the provided texts.
+        :param tokenizer:
         :param texts:
         :return:
         """
         word_counts = Counter()
         for text in texts:
-            word_counts.update(text.split())
+            if tokenizer.normalizer is not None:
+                pre_tokenized_text = tokenizer.pre_tokenizer.pre_tokenize_str(text)
+                words = [word for word, _ in pre_tokenized_text]
+            else:
+                words = text.split()
+            word_counts.update(words)
         return word_counts
 
     def compute_alphabet(self, word_counts: Dict[str, int]) -> List[str]:
