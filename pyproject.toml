@@ -4,6 +4,7 @@ version = "0.1.3"
 description = "A score-based implementation of WordPiece tokenization training, compatible with HuggingFace tokenizers."
 authors = ["Kacper Łukawski <lukawski.kacper@gmail.com>"]
 readme = "README.md"
+license = "Apache-2.0"
 packages = [
     { include = "real_wordpiece", from = "src" },
 ]
