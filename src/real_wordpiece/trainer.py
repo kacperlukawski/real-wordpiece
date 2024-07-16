@@ -121,7 +121,7 @@ class Tokenization:
                     self.pair_frequency[old_left_pair] -= word.count
                     if self.pair_frequency[old_left_pair] == 0:
                         remove_pairs.add(old_left_pair)
-                if index + 2 < len(word.tokens) - 1:
+                if index + 2 < len(word.tokens):
                     old_right_pair = (word.tokens[index + 1], word.tokens[index + 2])
                     new_right_pair = (new_token, word.tokens[index + 2])
 
@@ -139,6 +139,7 @@ class Tokenization:
                     del self.token_frequency[word.tokens[index + 1]]
 
                 # Replace the pair with the new token
+                logger.info(f"Replacing {current_pair} with {new_token}")
                 word.tokens[index] = new_token
                 del word.tokens[index + 1]
 
@@ -247,22 +248,21 @@ class RealWordPieceTrainer:
         )
 
         while len(vocabulary) < self.vocab_size:
-            # Filter only the scores that are above the minimum frequency
-            filtered_scores = {
-                pair: score
-                for pair, score in sorted(
-                    tokenization.scores.items(), key=lambda x: x[0]
-                )
-                if tokenization.get_pair_frequency(pair) >= self.min_frequency
-            }
-
             # Break the process if there are no more pairs to merge
-            if len(filtered_scores) == 0:
-                logger.info("No more pairs frequent enough to merge")
+            if len(tokenization.scores) == 0:
+                logger.info("No more pairs to consider")
                 break
 
             # Find the pair with the maximum score, merge it and update the vocabulary
-            max_pair, max_score = max(filtered_scores.items(), key=lambda x: x[1])
+            max_pair, max_score = max(tokenization.scores.items(), key=lambda x: x[1])
+            max_pair_frequency = tokenization.get_pair_frequency(max_pair)
+            if max_pair_frequency < self.min_frequency:
+                logger.info(
+                    f"No more pairs frequent enough to merge. The last pair had a score of {max_score} "
+                    f"and frequency of {max_pair_frequency}"
+                )
+                break
+
             second_token = max_pair[1]
             if second_token.startswith(self.continuing_subword_prefix):
                 second_token = second_token[2:]
