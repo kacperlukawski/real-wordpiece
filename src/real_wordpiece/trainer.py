@@ -60,7 +60,13 @@ class Tokenization:
             self.token_frequency[token] += word.count
         for pair in word.iter_token_pairs(unique_only=False):
             self.pair_frequency[pair] += word.count
-        for pair in word.iter_token_pairs():
+
+        # We have to iterate over all the token pairs in the tokenization,
+        # as the individual token frequencies have been updated. For example,
+        # have to update the frequency of the pair "a" and "##b" after
+        # updating the frequency of the token "a", even if the pair "a" and "##b"
+        # was not present in the current word.
+        for pair in self.iter_token_pairs(unique_only=True):
             self.scores[pair] = self.pair_frequency[pair] / (
                 self.token_frequency[pair[0]] * self.token_frequency[pair[1]]
             )
@@ -244,7 +250,9 @@ class RealWordPieceTrainer:
             # Filter only the scores that are above the minimum frequency
             filtered_scores = {
                 pair: score
-                for pair, score in tokenization.scores.items()
+                for pair, score in sorted(
+                    tokenization.scores.items(), key=lambda x: x[0]
+                )
                 if tokenization.get_pair_frequency(pair) >= self.min_frequency
             }
 
@@ -312,7 +320,15 @@ class RealWordPieceTrainer:
         # Compute the alphabet from seen words
         alphabet_counts = Counter()
         for word, count in word_counts.items():
-            alphabet_counts.update(list(word) * count)
+            word_letters = list(word)
+            middle_letters = [f"##{c}" for c in word_letters[1:]]
+            # The first letter is the only one without the prefix
+            alphabet_counts.update(word_letters[0:1] * count)
+            # However, we also want to keep the other letters
+            for letter in word_letters[1:]:
+                alphabet_counts[letter] += 0
+            # Middle letters has the prefix assigned
+            alphabet_counts.update(middle_letters * count)
 
         # Also include anything from the provided initial alphabet
         for char in self.initial_alphabet:
