@@ -61,11 +61,7 @@ class Tokenization:
         for pair in word.iter_token_pairs(unique_only=False):
             self.pair_frequency[pair] += word.count
 
-        # We have to iterate over all the token pairs in the tokenization,
-        # as the individual token frequencies have been updated. For example,
-        # have to update the frequency of the pair "a" and "##b" after
-        # updating the frequency of the token "a", even if the pair "a" and "##b"
-        # was not present in the current word.
+    def calculate_scores(self):
         for pair in self.iter_token_pairs(unique_only=True):
             self.scores[pair] = self.pair_frequency[pair] / (
                 self.token_frequency[pair[0]] * self.token_frequency[pair[1]]
@@ -139,7 +135,6 @@ class Tokenization:
                     del self.token_frequency[word.tokens[index + 1]]
 
                 # Replace the pair with the new token
-                logger.info(f"Replacing {current_pair} with {new_token}")
                 word.tokens[index] = new_token
                 del word.tokens[index + 1]
 
@@ -253,25 +248,33 @@ class RealWordPieceTrainer:
                 logger.info("No more pairs to consider")
                 break
 
+            # Filter out the pairs that are not frequent enough
+            filtered_scores = OrderedDict()
+            for token_pair, score in tokenization.scores.items():
+                if tokenization.get_pair_frequency(token_pair) < self.min_frequency:
+                    continue
+                filtered_scores[token_pair] = score
+
+            # Stop if there are no more frequent enough pairs
+            if len(filtered_scores) == 0:
+                logger.info("No more pairs frequent enough to merge")
+                break
+
             # Find the pair with the maximum score. If there are multiple pairs with the same score, choose the one
             # with the highest frequency. That should make the algorithm more stable.
-            max_score = max(tokenization.scores.values())
+            max_score = max(filtered_scores.values())
             candidates = [
-                token
-                for token in tokenization.scores.keys()
-                if tokenization.scores[token] == max_score
+                token_pair
+                for token_pair in filtered_scores.keys()
+                if filtered_scores[token_pair] == max_score
             ]
             max_pair = max(
                 candidates, key=lambda pair: tokenization.get_pair_frequency(pair)
             )
             max_pair_frequency = tokenization.get_pair_frequency(max_pair)
-            if max_pair_frequency < self.min_frequency:
-                logger.info(
-                    f"No more pairs frequent enough to merge. The last pair had a score of {max_score} "
-                    f"and frequency of {max_pair_frequency}"
-                )
-                break
-
+            logger.debug(
+                f"Merging pair {max_pair} with score {max_score} and frequency {max_pair_frequency}"
+            )
             second_token = max_pair[1]
             if second_token.startswith(self.continuing_subword_prefix):
                 second_token = second_token[2:]
@@ -384,5 +387,8 @@ class RealWordPieceTrainer:
 
             # Store the tokenized word
             tokenization.add_word(tokenized_word)
+
+        # Finally calculate the scores, to not calculate them in the loop
+        tokenization.calculate_scores()
 
         return tokenization
