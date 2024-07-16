@@ -253,8 +253,17 @@ class RealWordPieceTrainer:
                 logger.info("No more pairs to consider")
                 break
 
-            # Find the pair with the maximum score, merge it and update the vocabulary
-            max_pair, max_score = max(tokenization.scores.items(), key=lambda x: x[1])
+            # Find the pair with the maximum score. If there are multiple pairs with the same score, choose the one
+            # with the highest frequency. That should make the algorithm more stable.
+            max_score = max(tokenization.scores.values())
+            candidates = [
+                token
+                for token in tokenization.scores.keys()
+                if tokenization.scores[token] == max_score
+            ]
+            max_pair = max(
+                candidates, key=lambda pair: tokenization.get_pair_frequency(pair)
+            )
             max_pair_frequency = tokenization.get_pair_frequency(max_pair)
             if max_pair_frequency < self.min_frequency:
                 logger.info(

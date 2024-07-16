@@ -1,7 +1,7 @@
-from tokenizers import Tokenizer
 from tokenizers.models import WordPiece
 from tokenizers.normalizers import Lowercase
 from tokenizers.pre_tokenizers import Whitespace
+from tokenizers.tokenizers import Tokenizer
 
 from real_wordpiece.trainer import RealWordPieceTrainer
 
@@ -12,18 +12,13 @@ tokenizer.pre_tokenizer = Whitespace()
 
 # Define the training data
 training_data = [
-    "This is the Hugging Face Course.",
-    "This chapter is about tokenization.",
-    "This section shows several tokenizer algorithms.",
-    "Hopefully, you will be able to understand how they are trained and generate tokens.",
+    "walker walked a long walk",
 ]
 
 # Finally, train the tokenizer using the RealWordPieceTrainer
-trainer = RealWordPieceTrainer(vocab_size=100, special_tokens=["[UNK]"])
+trainer = RealWordPieceTrainer(vocab_size=28, special_tokens=["[UNK]"])
 trainer.train_tokenizer(training_data, tokenizer)
 
 # The tokenizer.model will be now an instance of WordPiece trained above
-print(tokenizer.encode("Hugging").tokens)
-# Out: ['huggi', '##n', '##g']
-print(tokenizer.encode("HOgging").tokens)
-# Out: ['h', '##o', '##g', '##g', '##ing']
+print(tokenizer.encode("walker walked a long walk").tokens)
+# Out: ['walk', '##er', 'walk', '##ed', 'a', 'long', 'walk']
