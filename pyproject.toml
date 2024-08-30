@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "real-wordpiece"
-version = "0.1.6"
+version = "0.1.7"
 description = "A score-based implementation of WordPiece tokenization training, compatible with HuggingFace tokenizers."
 authors = ["Kacper Łukawski <lukawski.kacper@gmail.com>"]
 readme = "README.md"
