@@ -183,3 +183,6 @@ def test_init_tokenization_calculates_values_properly():
     assert tokenization.scores[("l", "##o")] == 1 / (1 * 1)
     assert tokenization.scores[("##o", "##n")] == 1 / (1 * 1)
     assert tokenization.scores[("##n", "##g")] == 1 / (1 * 1)
+
+
+# TODO: test if training applies normalization and pre-tokenization

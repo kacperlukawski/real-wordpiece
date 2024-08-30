@@ -198,7 +198,7 @@ class RealWordPieceTrainer:
         self.continuing_subword_prefix = continuing_subword_prefix
         self.end_of_word_suffix = end_of_word_suffix or ""
 
-    def train_tokenizer(self, training_data: List[str], tokenizer: Tokenizer):
+    def train_tokenizer(self, training_data: Iterable[str], tokenizer: Tokenizer):
         """
         Train a tokenizer using the WordPiece algorithm. It modifies the tokenizer model in place.
         :param training_data:
@@ -213,15 +213,8 @@ class RealWordPieceTrainer:
         # Configure the underlying model
         tokenizer.model.continuing_subword_prefix = self.continuing_subword_prefix
 
-        # Normalize the training data
-        normalized_training_data = training_data
-        if tokenizer.normalizer is not None:
-            normalized_training_data = [
-                tokenizer.normalizer.normalize_str(text) for text in training_data
-            ]
-
         # Calculate the word counts
-        word_counts = self.calculate_word_counts(tokenizer, normalized_training_data)
+        word_counts = self.calculate_word_counts(tokenizer, training_data)
         logger.info(f"Found {len(word_counts)} unique words in the training data")
         logger.debug(f"Word counts: {word_counts}")
 
@@ -302,24 +295,36 @@ class RealWordPieceTrainer:
             model = WordPiece.from_file(fp.name)
 
             # Reset the tokenizer model to the new one
-            tokenizer.model = model
+            tokenizer.model = model  # noqa
 
     def calculate_word_counts(
-        self, tokenizer: Tokenizer, texts: List[str]
+        self, tokenizer: Tokenizer, texts: Iterable[str]
     ) -> Dict[str, int]:
         """
-        Count the number of times each word appears in the provided texts.
+        Count the number of times each word appears in the provided texts. This method performs the normalization and
+        pre-tokenization using the pipelines defined in the tokenizer.
         :param tokenizer:
         :param texts:
         :return:
         """
         word_counts = Counter()
         for text in texts:
+            processed_text = text
+
+            # Normalize the text first
             if tokenizer.normalizer is not None:
-                pre_tokenized_text = tokenizer.pre_tokenizer.pre_tokenize_str(text)
+                processed_text = tokenizer.normalizer.normalize_str(processed_text)
+
+            # Split the text into words, using the pre-tokenizer if available
+            if tokenizer.pre_tokenizer is not None:
+                pre_tokenized_text = tokenizer.pre_tokenizer.pre_tokenize_str(
+                    processed_text
+                )
                 words = [word for word, _ in pre_tokenized_text]
             else:
-                words = text.split()
+                words = processed_text.split()
+
+            # Update the word counts
             word_counts.update(words)
         return word_counts
 
